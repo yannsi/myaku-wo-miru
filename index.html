@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>脈を見る</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 1列の計測画面：上に大きな拍数、中央に波形、下に仕組みと注意 */
+:root{
+  --bg:#f6f4f5; --surface:#ffffff; --ink:#1f1a1c; --muted:#6f6468;
+  --line:#e6dfe2; --accent:#c4223c; --accent-soft:#f6dde2; --ok:#2f7d55; --warn:#a8641a;
+  --font:"BIZ UDPGothic","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#151113; --surface:#1f191c; --ink:#f3ecef; --muted:#a8999f;
+    --line:#352b30; --accent:#ff5f74; --accent-soft:#3b1d24; --ok:#5fc08c; --warn:#e2a35a; color-scheme:dark; }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.7;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:calc(20px + env(safe-area-inset-top,0px)) calc(32px + env(safe-area-inset-bottom,0px))}
+main{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1{font-size:1.35rem;margin:0;text-wrap:balance;display:flex;align-items:center;gap:10px}
+.lead{margin:0;color:var(--muted);font-size:.95rem}
+
+.meter{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.top{display:flex;align-items:center;gap:16px}
+.lens{width:64px;height:64px;border-radius:50%;overflow:hidden;flex:none;background:var(--accent-soft);border:2px solid var(--line);position:relative}
+.lens video{width:100%;height:100%;object-fit:cover;display:block}
+.readout{flex:1;min-width:0}
+.num{font-size:4.2rem;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em;display:flex;align-items:baseline;gap:8px}
+.num small{font-size:1rem;font-weight:400;color:var(--muted);letter-spacing:0}
+.heart{width:30px;height:30px;flex:none;color:var(--accent);transition:transform .12s ease-out}
+.heart.beat{transform:scale(1.35)}
+.status{font-size:.95rem;color:var(--muted);min-height:1.7em}
+.status.ok{color:var(--ok)} .status.warn{color:var(--warn)} .status.err{color:var(--accent)}
+
+.wavebox{border-radius:12px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+canvas#wave{display:block;width:100%;height:120px}
+
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s linear}
+.stats{display:flex;gap:10px;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}
+.stats span{font-variant-numeric:tabular-nums}
+.stats b{color:var(--ink);font-weight:700}
+
+.result{border-top:1px dashed var(--line);padding-top:12px;font-size:1rem}
+.result b{font-size:1.4rem;color:var(--accent);font-variant-numeric:tabular-nums}
+
+.actions{display:flex;gap:10px}
+button{font:inherit;font-weight:700;font-size:1.05rem;border-radius:12px;padding:14px 18px;cursor:pointer;border:1px solid transparent;flex:1}
+#start{background:var(--accent);color:#fff}
+#stop{background:transparent;color:var(--ink);border-color:var(--line)}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+button:disabled{opacity:.45;cursor:default}
+
+section h2{font-size:1rem;margin:0 0 6px}
+section p,section ul{margin:0;font-size:.93rem}
+section ul{padding-left:1.2em}
+.note{font-size:.82rem;color:var(--muted);border-left:3px solid var(--line);padding-left:10px}
+@media (prefers-reduced-motion:reduce){.heart{transition:none}.bar i{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>
+      <svg class="heart" id="heartTitle" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.2 4.4 2.4h1.8c.8-1.2 2.3-2.4 4.4-2.4 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>
+      脈を見る
+    </h1>
+    <p class="lead">指先をカメラにのせるだけで、脈の波と1分あたりの拍数を表示します。</p>
+  </header>
+
+  <div class="meter" aria-live="polite">
+    <div class="top">
+      <div class="lens"><video id="cam" playsinline muted></video></div>
+      <div class="readout">
+        <div class="num"><span id="bpm">--</span><small>拍/分</small></div>
+        <div class="status" id="status">「計測をはじめる」を押してください</div>
+      </div>
+    </div>
+    <div class="wavebox"><canvas id="wave" aria-label="脈の波形"></canvas></div>
+    <div class="bar" aria-hidden="true"><i id="prog"></i></div>
+    <div class="stats">
+      <span>拍の間隔 <b id="ibi">--</b> ミリ秒</span>
+      <span>検出した拍 <b id="beats">0</b></span>
+      <span>信号 <b id="qual">--</b></span>
+    </div>
+    <div class="result" id="result" hidden>15秒間の結果　<b id="resBpm">--</b> 拍/分</div>
+    <div class="actions">
+      <button id="start">計測をはじめる</button>
+      <button id="stop" disabled>止める</button>
+    </div>
+  </div>
+
+  <section>
+    <h2>上手に測るコツ</h2>
+    <ul>
+      <li>人さし指の腹で、背面カメラのレンズとライトを両方ふさぐ</li>
+      <li>押しつけすぎない（血の流れが止まって波が消えます）</li>
+      <li>手と指を動かさず、15秒ほど待つ</li>
+      <li>ライトが点かない機種は、明るい場所や照明の下で測る</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>なぜ脈が分かるのか</h2>
+    <p>指に光を当てると、血液が光の一部を吸収します。心臓が打つたびに指先の血の量がわずかに増減するので、カメラに映る赤色の明るさも同じリズムで揺れます。この揺れの山を数えて、拍と拍の間隔から1分あたりの拍数を計算しています。病院のパルスオキシメーターと同じ「光電容積脈波」という仕組みです。</p>
+  </section>
+
+  <p class="note">体験用の作品です。医療機器ではないため、健康状態の判断には使わないでください。映像は端末の中だけで処理し、どこにも送信しません。</p>
+</main>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const video = $('#cam'), startBtn = $('#start'), stopBtn = $('#stop');
+  const bpmEl = $('#bpm'), statusEl = $('#status'), heart = $('#heartTitle');
+  const ibiEl = $('#ibi'), beatsEl = $('#beats'), qualEl = $('#qual'), prog = $('#prog');
+  const resultEl = $('#result'), resBpm = $('#resBpm');
+  const wave = $('#wave'), wctx = wave.getContext('2d');
+  const off = document.createElement('canvas'); off.width = 32; off.height = 24;
+  const octx = off.getContext('2d', { willReadFrequently: true });
+
+  const KEEP = 12;          // 保持する秒数
+  const MEASURE = 15;       // 結果を出すまでの秒数
+  let stream = null, track = null, running = false, wakeLock = null;
+  let samples = [];         // {t, r, g}
+  let fingerSince = 0, lastFlash = 0, bpmLog = [], resultShown = false;
+  let lastAnalysis = null;
+
+  function setStatus(text, kind) { statusEl.textContent = text; statusEl.className = 'status' + (kind ? ' ' + kind : ''); }
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  async function start() {
+    if (!navigator.mediaDevices?.getUserMedia) { setStatus('このブラウザではカメラを使えません。https のページで開いてください。', 'err'); return; }
+    startBtn.disabled = true;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30 } }
+      });
+    } catch (e) {
+      setStatus('カメラを使えませんでした。ブラウザの設定でカメラを許可してください。', 'err');
+      startBtn.disabled = false; return;
+    }
+    video.srcObject = stream;
+    try { await video.play(); } catch (e) {}
+    track = stream.getVideoTracks()[0];
+    let torchOk = false;
+    try {
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      if (caps.torch) { await track.applyConstraints({ advanced: [{ torch: true }] }); torchOk = true; }
+    } catch (e) {}
+    try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e) {}
+    running = true; samples = []; fingerSince = 0; bpmLog = []; resultShown = false;
+    resultEl.hidden = true; stopBtn.disabled = false;
+    setStatus(torchOk ? '指先でカメラとライトをふさいでください' : 'ライトが使えない機種です。明るい場所で指をのせてください', torchOk ? '' : 'warn');
+    schedule();
+  }
+
+  function stop() {
+    running = false;
+    try { track?.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) {}
+    stream?.getTracks().forEach(t => t.stop());
+    stream = null; track = null; video.srcObject = null;
+    try { wakeLock?.release(); } catch (e) {}
+    wakeLock = null;
+    startBtn.disabled = false; stopBtn.disabled = true;
+    prog.style.width = '0';
+    setStatus(resultShown ? '計測を止めました' : '「計測をはじめる」を押してください');
+  }
+
+  function schedule() {
+    if (!running) return;
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(frame);
+    else requestAnimationFrame(frame);
+  }
+
+  function frame() {
+    if (!running) return;
+    if (video.readyState >= 2) {
+      octx.drawImage(video, 0, 0, off.width, off.height);
+      const d = octx.getImageData(0, 0, off.width, off.height).data;
+      let r = 0, g = 0, b = 0; const n = d.length / 4;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+      r /= n; g /= n; b /= n;
+      const t = performance.now() / 1000;
+      const finger = r > 90 && r > g * 1.5 && r > b * 1.5;
+      if (!finger) {
+        if (fingerSince) { setStatus('指がずれました。もう一度のせてください', 'warn'); }
+        fingerSince = 0; samples = []; bpmLog = []; lastAnalysis = null;
+        bpmEl.textContent = '--'; ibiEl.textContent = '--'; beatsEl.textContent = '0'; qualEl.textContent = '--';
+        prog.style.width = '0';
+      } else {
+        if (!fingerSince) { fingerSince = t; setStatus('計測中…動かずにお待ちください', ''); }
+        samples.push({ t, r, g });
+        while (samples.length && samples[0].t < t - KEEP) samples.shift();
+        update(t);
+      }
+      draw();
+    }
+    schedule();
+  }
+
+  // 明るさの揺れから拍を見つける
+  function analyze() {
+    const s = samples.filter(p => p.t >= fingerSince + 1); // 最初の1秒は明るさが落ち着かないので捨てる
+    if (s.length < 30) return null;
+    const meanR = s.reduce((a, p) => a + p.r, 0) / s.length;
+    const key = meanR > 245 ? 'g' : 'r';                    // 赤が飽和していたら緑を使う
+    const t = s.map(p => p.t), x = s.map(p => p[key]), n = s.length;
+
+    // 1.5秒の移動平均を引いて、ゆっくりした明るさの変化を除く（血が増えると暗くなるので符号を反転）
+    const y = new Array(n); let lo = 0, hi = 0, sum = 0;
+    for (let i = 0; i < n; i++) {
+      while (hi < n && t[hi] <= t[i] + 0.75) sum += x[hi++];
+      while (t[lo] < t[i] - 0.75) sum -= x[lo++];
+      y[i] = -(x[i] - sum / (hi - lo));
+    }
+    // 軽くなめらかにする
+    const z = y.map((v, i) => (y[Math.max(0, i - 1)] + v + y[Math.min(n - 1, i + 1)]) / 3);
+    const sd = Math.sqrt(z.reduce((a, v) => a + v * v, 0) / n) || 1;
+
+    // 前後0.27秒で一番高い点を拍とする（=最大でも約220拍/分）
+    const W = 0.27, peaks = [];
+    const tEnd = t[n - 1];
+    for (let i = 0; i < n; i++) {
+      if (t[i] > tEnd - W || z[i] < 0.3 * sd) continue;
+      let isMax = true;
+      for (let j = i - 1; j >= 0 && t[j] >= t[i] - W; j--) if (z[j] > z[i]) { isMax = false; break; }
+      if (isMax) for (let j = i + 1; j < n && t[j] <= t[i] + W; j++) if (z[j] >= z[i]) { isMax = false; break; }
+      if (isMax) peaks.push(i);
+    }
+    const intervals = [];
+    for (let k = 1; k < peaks.length; k++) {
+      const dt = t[peaks[k]] - t[peaks[k - 1]];
+      if (dt >= 0.33 && dt <= 1.5) intervals.push(dt);
+    }
+    let bpm = null, ibi = null, quality = 0;
+    if (intervals.length >= 3) {
+      const recent = intervals.slice(-8).sort((a, b) => a - b);
+      ibi = recent[Math.floor(recent.length / 2)];
+      bpm = 60 / ibi;
+      quality = recent.filter(v => Math.abs(v - ibi) / ibi < 0.2).length / recent.length;
+    }
+    return { t, z, sd, peaks, bpm, ibi, quality, count: peaks.length };
+  }
+
+  function update(now) {
+    const a = analyze(); lastAnalysis = a;
+    const elapsed = now - fingerSince;
+    prog.style.width = Math.min(100, elapsed / MEASURE * 100) + '%';
+    if (!a) return;
+    beatsEl.textContent = a.count;
+    // 新しい拍が見つかったらハートを打たせる
+    if (a.peaks.length) {
+      const lt = a.t[a.peaks[a.peaks.length - 1]];
+      if (lt > lastFlash + 0.2) { lastFlash = lt; heart.classList.add('beat'); setTimeout(() => heart.classList.remove('beat'), 140); }
+    }
+    if (a.bpm && a.quality >= 0.6) {
+      bpmEl.textContent = Math.round(a.bpm);
+      ibiEl.textContent = Math.round(a.ibi * 1000);
+      qualEl.textContent = a.quality >= 0.85 ? '良好' : 'ふつう';
+      bpmLog.push({ t: now, bpm: a.bpm });
+      bpmLog = bpmLog.filter(p => p.t > now - 8);
+      if (!resultShown) setStatus('計測中…動かずにお待ちください', 'ok');
+    } else if (a.bpm) {
+      qualEl.textContent = '不安定';
+      setStatus('波が乱れています。指の力をゆるめて動かさないでください', 'warn');
+    }
+    if (!resultShown && elapsed >= MEASURE && bpmLog.length > 10) {
+      const v = bpmLog.map(p => p.bpm).sort((a, b) => a - b);
+      resBpm.textContent = Math.round(v[Math.floor(v.length / 2)]);
+      resultEl.hidden = false; resultShown = true;
+      setStatus('計測できました。続けると数値は更新されます', 'ok');
+    }
+  }
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = wave.clientWidth, h = wave.clientHeight;
+    if (wave.width !== Math.round(w * dpr)) { wave.width = Math.round(w * dpr); wave.height = Math.round(h * dpr); }
+    wctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    wctx.clearRect(0, 0, w, h);
+    // 1秒ごとの目盛り
+    wctx.strokeStyle = css('--line'); wctx.lineWidth = 1;
+    const SPAN = 6;
+    for (let s = 1; s < SPAN; s++) { const x = w * s / SPAN; wctx.beginPath(); wctx.moveTo(x, 0); wctx.lineTo(x, h); wctx.stroke(); }
+    const a = lastAnalysis;
+    if (!a) {
+      wctx.fillStyle = css('--muted'); wctx.font = '13px ' + css('--font');
+      wctx.textAlign = 'center'; wctx.fillText(running ? '指をのせると波が出ます' : '6秒分の波をここに表示します', w / 2, h / 2 + 4);
+      return;
+    }
+    const tEnd = a.t[a.t.length - 1], t0 = tEnd - SPAN;
+    const scale = (h * 0.38) / (2.2 * a.sd);
+    const X = t => (t - t0) / SPAN * w, Y = v => h / 2 - Math.max(-2.6 * a.sd, Math.min(2.6 * a.sd, v)) * scale;
+    wctx.strokeStyle = css('--accent'); wctx.lineWidth = 2.2; wctx.lineJoin = 'round';
+    wctx.beginPath(); let started = false;
+    for (let i = 0; i < a.t.length; i++) {
+      if (a.t[i] < t0) continue;
+      const px = X(a.t[i]), py = Y(a.z[i]);
+      if (!started) { wctx.moveTo(px, py); started = true; } else wctx.lineTo(px, py);
+    }
+    wctx.stroke();
+    wctx.fillStyle = css('--accent');
+    for (const i of a.peaks) { if (a.t[i] < t0) continue; wctx.beginPath(); wctx.arc(X(a.t[i]), Y(a.z[i]), 3.5, 0, Math.PI * 2); wctx.fill(); }
+  }
+
+  startBtn.addEventListener('click', start);
+  stopBtn.addEventListener('click', stop);
+  document.addEventListener('visibilitychange', () => { if (document.hidden && running) stop(); });
+  window.addEventListener('resize', draw);
+  draw();
+})();
+</script>
+</body>
+</html>
