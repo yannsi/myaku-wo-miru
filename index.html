@@ -8,16 +8,18 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
 <style>
-/* 1列の計測画面：上に大きな拍数、中央に波形、下に仕組みと注意 */
+/* 1列の計測画面：拍数 → 呼吸と脈 → 記録 の順に縦に並べる */
 :root{
   --bg:#f6f4f5; --surface:#ffffff; --ink:#1f1a1c; --muted:#6f6468;
-  --line:#e6dfe2; --accent:#c4223c; --accent-soft:#f6dde2; --ok:#2f7d55; --warn:#a8641a;
+  --line:#e6dfe2; --accent:#c4223c; --accent-soft:#f6dde2; --breath:#3a6fa8; --breath-soft:#dde8f4;
+  --ok:#2f7d55; --warn:#a8641a;
   --font:"BIZ UDPGothic","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){
   :root{ --bg:#151113; --surface:#1f191c; --ink:#f3ecef; --muted:#a8999f;
-    --line:#352b30; --accent:#ff5f74; --accent-soft:#3b1d24; --ok:#5fc08c; --warn:#e2a35a; color-scheme:dark; }
+    --line:#352b30; --accent:#ff5f74; --accent-soft:#3b1d24; --breath:#7fb0e6; --breath-soft:#1c2a3a;
+    --ok:#5fc08c; --warn:#e2a35a; color-scheme:dark; }
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -26,11 +28,13 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16p
   padding-block:calc(20px + env(safe-area-inset-top,0px)) calc(32px + env(safe-area-inset-bottom,0px))}
 main{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
 h1{font-size:1.35rem;margin:0;text-wrap:balance;display:flex;align-items:center;gap:10px}
+h2{font-size:1.05rem;margin:0;text-wrap:balance}
 .lead{margin:0;color:var(--muted);font-size:.95rem}
 
-.meter{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.card > p{margin:0;font-size:.92rem;color:var(--muted)}
 .top{display:flex;align-items:center;gap:16px}
-.lens{width:64px;height:64px;border-radius:50%;overflow:hidden;flex:none;background:var(--accent-soft);border:2px solid var(--line);position:relative}
+.lens{width:64px;height:64px;border-radius:50%;overflow:hidden;flex:none;background:var(--accent-soft);border:2px solid var(--line)}
 .lens video{width:100%;height:100%;object-fit:cover;display:block}
 .readout{flex:1;min-width:0}
 .num{font-size:4.2rem;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em;display:flex;align-items:baseline;gap:8px}
@@ -40,30 +44,64 @@ h1{font-size:1.35rem;margin:0;text-wrap:balance;display:flex;align-items:center;
 .status{font-size:.95rem;color:var(--muted);min-height:1.7em}
 .status.ok{color:var(--ok)} .status.warn{color:var(--warn)} .status.err{color:var(--accent)}
 
-.wavebox{border-radius:12px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
-canvas#wave{display:block;width:100%;height:120px}
+.plot{border-radius:12px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+canvas{display:block;width:100%}
+#wave{height:120px} #trend{height:150px} #hist{height:140px}
 
 .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s linear}
-.stats{display:flex;gap:10px;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}
+.stats{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}
 .stats span{font-variant-numeric:tabular-nums}
 .stats b{color:var(--ink);font-weight:700}
 
-.result{border-top:1px dashed var(--line);padding-top:12px;font-size:1rem}
-.result b{font-size:1.4rem;color:var(--accent);font-variant-numeric:tabular-nums}
+.result{border-top:1px dashed var(--line);padding-top:14px;display:flex;flex-direction:column;gap:10px}
+.result .val{font-size:1rem}
+.result .val b{font-size:1.5rem;color:var(--accent);font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips label{position:relative}
+.chips input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.chips span{display:inline-block;padding:6px 14px;border-radius:999px;border:1px solid var(--line);font-size:.9rem;color:var(--muted)}
+.chips input:checked + span{background:var(--accent-soft);border-color:var(--accent);color:var(--ink);font-weight:700}
+.chips input:focus-visible + span{outline:3px solid var(--ink);outline-offset:2px}
 
 .actions{display:flex;gap:10px}
-button{font:inherit;font-weight:700;font-size:1.05rem;border-radius:12px;padding:14px 18px;cursor:pointer;border:1px solid transparent;flex:1}
-#start{background:var(--accent);color:#fff}
-#stop{background:transparent;color:var(--ink);border-color:var(--line)}
+button{font:inherit;font-weight:700;font-size:1.05rem;border-radius:12px;padding:14px 18px;cursor:pointer;border:1px solid transparent}
+.actions button{flex:1}
+.primary{background:var(--accent);color:#fff}
+.secondary{background:transparent;color:var(--ink);border-color:var(--line)}
+.breathbtn{background:var(--breath);color:#fff}
 button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
 button:disabled{opacity:.45;cursor:default}
 
-section h2{font-size:1rem;margin:0 0 6px}
-section p,section ul{margin:0;font-size:.93rem}
-section ul{padding-left:1.2em}
-.note{font-size:.82rem;color:var(--muted);border-left:3px solid var(--line);padding-left:10px}
-@media (prefers-reduced-motion:reduce){.heart{transition:none}.bar i{transition:none}}
+/* 呼吸ガイド */
+.guide{display:flex;align-items:center;gap:18px}
+.orb{width:104px;height:104px;flex:none;display:grid;place-items:center;border-radius:50%;background:var(--breath-soft);position:relative}
+.orb i{position:absolute;inset:0;margin:auto;width:100%;height:100%;border-radius:50%;background:var(--breath);opacity:.85;transform:scale(.55)}
+.orb b{position:relative;color:#fff;font-size:1.6rem;font-variant-numeric:tabular-nums}
+.guide .say{font-size:1.4rem;font-weight:700;color:var(--breath);margin:0}
+.guide .sub{font-size:.85rem;color:var(--muted);margin:0}
+.guide > div{min-width:0}
+.legend{display:flex;gap:14px;font-size:.8rem;color:var(--muted);flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:14px;height:10px;border-radius:2px;display:inline-block}
+
+/* 記録 */
+.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.list li{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.list li:first-child{border-top:none}
+.list .when{font-size:.9rem;min-width:0}
+.list .when small{display:block;color:var(--muted);font-size:.78rem}
+.list .v{font-weight:700;font-variant-numeric:tabular-nums;font-size:1.15rem}
+.list .v small{font-weight:400;font-size:.75rem;color:var(--muted);margin-left:2px}
+.del{font-size:.8rem;padding:6px 10px;border-radius:8px;background:transparent;color:var(--muted);border:1px solid var(--line)}
+.del.armed{color:#fff;background:var(--accent);border-color:var(--accent)}
+.empty{font-size:.9rem;color:var(--muted);margin:0}
+
+section.info h2{margin-bottom:6px;font-size:1rem}
+section.info p,section.info ul{margin:0;font-size:.93rem}
+section.info ul{padding-left:1.2em}
+.note{font-size:.82rem;color:var(--muted);border-left:3px solid var(--line);padding-left:10px;margin:0}
+@media (prefers-reduced-motion:reduce){.heart,.bar i{transition:none}}
 </style>
 </head>
 <body>
@@ -73,10 +111,11 @@ section ul{padding-left:1.2em}
       <svg class="heart" id="heartTitle" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.2 4.4 2.4h1.8c.8-1.2 2.3-2.4 4.4-2.4 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>
       脈を見る
     </h1>
-    <p class="lead">指先をカメラにのせるだけで、脈の波と1分あたりの拍数を表示します。</p>
+    <p class="lead">指先をカメラにのせるだけで、脈の波と1分あたりの拍数を表示します。呼吸による脈の変化を見たり、結果を記録したりできます。</p>
   </header>
 
-  <div class="meter" aria-live="polite">
+  <!-- 計測 -->
+  <div class="card" aria-live="polite">
     <div class="top">
       <div class="lens"><video id="cam" playsinline muted></video></div>
       <div class="readout">
@@ -84,21 +123,64 @@ section ul{padding-left:1.2em}
         <div class="status" id="status">「計測をはじめる」を押してください</div>
       </div>
     </div>
-    <div class="wavebox"><canvas id="wave" aria-label="脈の波形"></canvas></div>
+    <div class="plot"><canvas id="wave" aria-label="脈の波形"></canvas></div>
     <div class="bar" aria-hidden="true"><i id="prog"></i></div>
     <div class="stats">
       <span>拍の間隔 <b id="ibi">--</b> ミリ秒</span>
       <span>検出した拍 <b id="beats">0</b></span>
       <span>信号 <b id="qual">--</b></span>
     </div>
-    <div class="result" id="result" hidden>15秒間の結果　<b id="resBpm">--</b> 拍/分</div>
+    <div class="result" id="result" hidden>
+      <div class="val">15秒間の結果　<b id="resBpm">--</b> 拍/分</div>
+      <div class="chips" role="radiogroup" aria-label="記録のメモ">
+        <label><input type="radio" name="tag" id="tag-none" value="" checked><span>メモなし</span></label>
+        <label><input type="radio" name="tag" id="tag-asa" value="朝"><span>朝</span></label>
+        <label><input type="radio" name="tag" id="tag-hiru" value="昼"><span>昼</span></label>
+        <label><input type="radio" name="tag" id="tag-yoru" value="夜"><span>夜</span></label>
+        <label><input type="radio" name="tag" id="tag-undo" value="運動後"><span>運動後</span></label>
+        <label><input type="radio" name="tag" id="tag-kokyu" value="呼吸練習"><span>呼吸練習</span></label>
+      </div>
+      <button class="secondary" id="save">この結果を記録する</button>
+    </div>
     <div class="actions">
-      <button id="start">計測をはじめる</button>
-      <button id="stop" disabled>止める</button>
+      <button class="primary" id="start">計測をはじめる</button>
+      <button class="secondary" id="stop" disabled>止める</button>
     </div>
   </div>
 
-  <section>
+  <!-- 呼吸 -->
+  <div class="card">
+    <h2>呼吸と脈</h2>
+    <p>息を吸うと脈は少し速くなり、吐くと遅くなります。ガイドに合わせて4秒吸って6秒吐くと、グラフに波のような揺れが出ます。</p>
+    <div class="guide">
+      <div class="orb" aria-hidden="true"><i id="orbFill"></i><b id="orbCount"></b></div>
+      <div>
+        <p class="say" id="say">ガイド停止中</p>
+        <p class="sub" id="saySub">計測しながら使うと、呼吸と脈の関係が見えます</p>
+      </div>
+    </div>
+    <button class="breathbtn" id="guideBtn">呼吸ガイドをはじめる</button>
+    <div class="plot"><canvas id="trend" aria-label="1拍ごとの脈拍の変化（直近60秒）"></canvas></div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>1拍ごとの脈拍</span>
+      <span><i style="background:var(--breath-soft);border:1px solid var(--breath)"></i>吸っている時間</span>
+    </div>
+    <div class="stats">
+      <span>呼吸による揺れ <b id="rsa">--</b> 拍/分</span>
+      <span>直近60秒の範囲 <b id="range">--</b></span>
+    </div>
+  </div>
+
+  <!-- 記録 -->
+  <div class="card">
+    <h2>記録</h2>
+    <div class="plot"><canvas id="hist" aria-label="これまでの記録の推移"></canvas></div>
+    <ul class="list" id="list"></ul>
+    <p class="empty" id="empty">まだ記録がありません。15秒測ると記録できます。</p>
+    <p>記録はこのスマホのブラウザの中だけに保存されます。ブラウザのデータを消すと記録も消えます。</p>
+  </div>
+
+  <section class="info">
     <h2>上手に測るコツ</h2>
     <ul>
       <li>人さし指の腹で、背面カメラのレンズとライトを両方ふさぐ</li>
@@ -108,9 +190,14 @@ section ul{padding-left:1.2em}
     </ul>
   </section>
 
-  <section>
+  <section class="info">
     <h2>なぜ脈が分かるのか</h2>
     <p>指に光を当てると、血液が光の一部を吸収します。心臓が打つたびに指先の血の量がわずかに増減するので、カメラに映る赤色の明るさも同じリズムで揺れます。この揺れの山を数えて、拍と拍の間隔から1分あたりの拍数を計算しています。病院のパルスオキシメーターと同じ「光電容積脈波」という仕組みです。</p>
+  </section>
+
+  <section class="info">
+    <h2>呼吸で脈が変わるわけ</h2>
+    <p>息を吸うと胸の中の圧が下がり、心臓を落ち着かせる神経の働きが弱まるため、脈が少し速くなります。吐くとその働きが戻って脈が遅くなります。「呼吸性洞性不整脈」と呼ばれる自然な現象で、リラックスしているときほど揺れが大きく出やすいとされています。</p>
   </section>
 
   <p class="note">体験用の作品です。医療機器ではないため、健康状態の判断には使わないでください。映像は端末の中だけで処理し、どこにも送信しません。</p>
@@ -122,21 +209,37 @@ section ul{padding-left:1.2em}
   const video = $('#cam'), startBtn = $('#start'), stopBtn = $('#stop');
   const bpmEl = $('#bpm'), statusEl = $('#status'), heart = $('#heartTitle');
   const ibiEl = $('#ibi'), beatsEl = $('#beats'), qualEl = $('#qual'), prog = $('#prog');
-  const resultEl = $('#result'), resBpm = $('#resBpm');
-  const wave = $('#wave'), wctx = wave.getContext('2d');
+  const resultEl = $('#result'), resBpm = $('#resBpm'), saveBtn = $('#save');
+  const rsaEl = $('#rsa'), rangeEl = $('#range');
   const off = document.createElement('canvas'); off.width = 32; off.height = 24;
   const octx = off.getContext('2d', { willReadFrequently: true });
 
-  const KEEP = 12;          // 保持する秒数
+  const KEEP = 12;          // 波形解析に保持する秒数
   const MEASURE = 15;       // 結果を出すまでの秒数
+  const TREND = 60;         // 1拍ごとのグラフに表示する秒数
+  const IN = 4, OUT = 6;    // 呼吸ガイド（秒）
   let stream = null, track = null, running = false, wakeLock = null;
-  let samples = [];         // {t, r, g}
-  let fingerSince = 0, lastFlash = 0, bpmLog = [], resultShown = false;
-  let lastAnalysis = null;
+  let samples = [];
+  let fingerSince = 0, lastFlash = 0, bpmLog = [], resultShown = false, lastAnalysis = null;
+  let beatSeries = [], lastBeatT = 0;           // {t, hr}
+  let guideOn = false, guideStart = 0, guideRuns = [];  // 吸う時間帯の記録 [{from, to}]
+  let pending = null;                            // 記録待ちの結果
 
-  function setStatus(text, kind) { statusEl.textContent = text; statusEl.className = 'status' + (kind ? ' ' + kind : ''); }
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const nowS = () => performance.now() / 1000;
+  function setStatus(text, kind) { statusEl.textContent = text; statusEl.className = 'status' + (kind ? ' ' + kind : ''); }
+  function fit(cv) {
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+    return { c, w, h };
+  }
+  function placeholder(c, w, h, text) {
+    c.fillStyle = css('--muted'); c.font = '13px ' + css('--font'); c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(text, w / 2, h / 2);
+  }
 
+  /* ---------- カメラ ---------- */
   async function start() {
     if (!navigator.mediaDevices?.getUserMedia) { setStatus('このブラウザではカメラを使えません。https のページで開いてください。', 'err'); return; }
     startBtn.disabled = true;
@@ -158,7 +261,7 @@ section ul{padding-left:1.2em}
       if (caps.torch) { await track.applyConstraints({ advanced: [{ torch: true }] }); torchOk = true; }
     } catch (e) {}
     try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e) {}
-    running = true; samples = []; fingerSince = 0; bpmLog = []; resultShown = false;
+    running = true; samples = []; fingerSince = 0; bpmLog = []; resultShown = false; lastBeatT = 0;
     resultEl.hidden = true; stopBtn.disabled = false;
     setStatus(torchOk ? '指先でカメラとライトをふさいでください' : 'ライトが使えない機種です。明るい場所で指をのせてください', torchOk ? '' : 'warn');
     schedule();
@@ -190,11 +293,11 @@ section ul{padding-left:1.2em}
       let r = 0, g = 0, b = 0; const n = d.length / 4;
       for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
       r /= n; g /= n; b /= n;
-      const t = performance.now() / 1000;
+      const t = nowS();
       const finger = r > 90 && r > g * 1.5 && r > b * 1.5;
       if (!finger) {
-        if (fingerSince) { setStatus('指がずれました。もう一度のせてください', 'warn'); }
-        fingerSince = 0; samples = []; bpmLog = []; lastAnalysis = null;
+        if (fingerSince) setStatus('指がずれました。もう一度のせてください', 'warn');
+        fingerSince = 0; samples = []; bpmLog = []; lastAnalysis = null; lastBeatT = 0;
         bpmEl.textContent = '--'; ibiEl.textContent = '--'; beatsEl.textContent = '0'; qualEl.textContent = '--';
         prog.style.width = '0';
       } else {
@@ -203,33 +306,29 @@ section ul{padding-left:1.2em}
         while (samples.length && samples[0].t < t - KEEP) samples.shift();
         update(t);
       }
-      draw();
+      drawWave(); drawTrend();
     }
     schedule();
   }
 
-  // 明るさの揺れから拍を見つける
+  /* ---------- 解析：明るさの揺れから拍を見つける ---------- */
   function analyze() {
     const s = samples.filter(p => p.t >= fingerSince + 1); // 最初の1秒は明るさが落ち着かないので捨てる
     if (s.length < 30) return null;
     const meanR = s.reduce((a, p) => a + p.r, 0) / s.length;
     const key = meanR > 245 ? 'g' : 'r';                    // 赤が飽和していたら緑を使う
     const t = s.map(p => p.t), x = s.map(p => p[key]), n = s.length;
-
-    // 1.5秒の移動平均を引いて、ゆっくりした明るさの変化を除く（血が増えると暗くなるので符号を反転）
+    // 1.5秒の移動平均を引いてゆっくりした変化を除く（血が増えると暗くなるので符号を反転）
     const y = new Array(n); let lo = 0, hi = 0, sum = 0;
     for (let i = 0; i < n; i++) {
       while (hi < n && t[hi] <= t[i] + 0.75) sum += x[hi++];
       while (t[lo] < t[i] - 0.75) sum -= x[lo++];
       y[i] = -(x[i] - sum / (hi - lo));
     }
-    // 軽くなめらかにする
     const z = y.map((v, i) => (y[Math.max(0, i - 1)] + v + y[Math.min(n - 1, i + 1)]) / 3);
     const sd = Math.sqrt(z.reduce((a, v) => a + v * v, 0) / n) || 1;
-
-    // 前後0.27秒で一番高い点を拍とする（=最大でも約220拍/分）
-    const W = 0.27, peaks = [];
-    const tEnd = t[n - 1];
+    // 前後0.27秒で一番高い点を拍とする
+    const W = 0.27, peaks = [], tEnd = t[n - 1];
     for (let i = 0; i < n; i++) {
       if (t[i] > tEnd - W || z[i] < 0.3 * sd) continue;
       let isMax = true;
@@ -258,11 +357,24 @@ section ul{padding-left:1.2em}
     prog.style.width = Math.min(100, elapsed / MEASURE * 100) + '%';
     if (!a) return;
     beatsEl.textContent = a.count;
-    // 新しい拍が見つかったらハートを打たせる
-    if (a.peaks.length) {
-      const lt = a.t[a.peaks[a.peaks.length - 1]];
-      if (lt > lastFlash + 0.2) { lastFlash = lt; heart.classList.add('beat'); setTimeout(() => heart.classList.remove('beat'), 140); }
+
+    // 1拍ごとの脈拍を記録（呼吸グラフ用）
+    for (const i of a.peaks) {
+      const pt = a.t[i];
+      if (pt <= lastBeatT + 0.3) continue;
+      if (lastBeatT > 0) {
+        const dt = pt - lastBeatT;
+        if (dt >= 0.33 && dt <= 1.5) {
+          const hr = 60 / dt;
+          if (!a.bpm || Math.abs(hr - a.bpm) / a.bpm < 0.3) beatSeries.push({ t: pt, hr });
+        }
+      }
+      lastBeatT = pt;
+      if (pt > lastFlash + 0.2) { lastFlash = pt; heart.classList.add('beat'); setTimeout(() => heart.classList.remove('beat'), 140); }
     }
+    while (beatSeries.length && beatSeries[0].t < now - 90) beatSeries.shift();
+    updateRsa(now);
+
     if (a.bpm && a.quality >= 0.6) {
       bpmEl.textContent = Math.round(a.bpm);
       ibiEl.textContent = Math.round(a.ibi * 1000);
@@ -275,49 +387,220 @@ section ul{padding-left:1.2em}
       setStatus('波が乱れています。指の力をゆるめて動かさないでください', 'warn');
     }
     if (!resultShown && elapsed >= MEASURE && bpmLog.length > 10) {
-      const v = bpmLog.map(p => p.bpm).sort((a, b) => a - b);
-      resBpm.textContent = Math.round(v[Math.floor(v.length / 2)]);
+      const v = bpmLog.map(p => p.bpm).sort((x, y) => x - y);
+      const value = Math.round(v[Math.floor(v.length / 2)]);
+      resBpm.textContent = value;
+      pending = { bpm: value, rsa: currentRsa };
+      saveBtn.disabled = false; saveBtn.textContent = 'この結果を記録する';
       resultEl.hidden = false; resultShown = true;
       setStatus('計測できました。続けると数値は更新されます', 'ok');
+    } else if (resultShown && pending && !saveBtn.disabled) {
+      pending.rsa = currentRsa; // 記録前なら呼吸の揺れは最新の値にしておく
     }
   }
 
-  function draw() {
-    const dpr = window.devicePixelRatio || 1;
-    const w = wave.clientWidth, h = wave.clientHeight;
-    if (wave.width !== Math.round(w * dpr)) { wave.width = Math.round(w * dpr); wave.height = Math.round(h * dpr); }
-    wctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    wctx.clearRect(0, 0, w, h);
-    // 1秒ごとの目盛り
-    wctx.strokeStyle = css('--line'); wctx.lineWidth = 1;
-    const SPAN = 6;
-    for (let s = 1; s < SPAN; s++) { const x = w * s / SPAN; wctx.beginPath(); wctx.moveTo(x, 0); wctx.lineTo(x, h); wctx.stroke(); }
-    const a = lastAnalysis;
-    if (!a) {
-      wctx.fillStyle = css('--muted'); wctx.font = '13px ' + css('--font');
-      wctx.textAlign = 'center'; wctx.fillText(running ? '指をのせると波が出ます' : '6秒分の波をここに表示します', w / 2, h / 2 + 4);
-      return;
+  // 10秒（呼吸1回分）ごとの最大−最小を平均して「呼吸による揺れ」とする
+  let currentRsa = null;
+  function updateRsa(now) {
+    const pts = beatSeries.filter(p => p.t >= now - TREND);
+    if (pts.length < 8) { currentRsa = null; rsaEl.textContent = '--'; rangeEl.textContent = '--'; return; }
+    const hrs = pts.map(p => p.hr);
+    rangeEl.textContent = Math.round(Math.min(...hrs)) + '〜' + Math.round(Math.max(...hrs));
+    const base = guideOn ? guideStart : pts[0].t, CYCLE = IN + OUT, amps = [];
+    const first = Math.floor((pts[0].t - base) / CYCLE), last = Math.floor((now - base) / CYCLE) - 1; // 終わった周期だけ
+    for (let k = first; k <= last; k++) {
+      const a = base + k * CYCLE, b = a + CYCLE;
+      const w = pts.filter(p => p.t >= a && p.t < b).map(p => p.hr);
+      if (w.length >= 4) amps.push(Math.max(...w) - Math.min(...w));
     }
+    if (!amps.length) { currentRsa = null; rsaEl.textContent = '--'; return; }
+    currentRsa = Math.round(amps.reduce((s, v) => s + v, 0) / amps.length);
+    rsaEl.textContent = '約 ' + currentRsa;
+  }
+
+  /* ---------- 描画 ---------- */
+  function drawWave() {
+    const { c, w, h } = fit($('#wave'));
+    c.strokeStyle = css('--line'); c.lineWidth = 1;
+    const SPAN = 6;
+    for (let s = 1; s < SPAN; s++) { const x = w * s / SPAN; c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
+    const a = lastAnalysis;
+    if (!a) { placeholder(c, w, h, running ? '指をのせると波が出ます' : '6秒分の波をここに表示します'); return; }
     const tEnd = a.t[a.t.length - 1], t0 = tEnd - SPAN;
     const scale = (h * 0.38) / (2.2 * a.sd);
     const X = t => (t - t0) / SPAN * w, Y = v => h / 2 - Math.max(-2.6 * a.sd, Math.min(2.6 * a.sd, v)) * scale;
-    wctx.strokeStyle = css('--accent'); wctx.lineWidth = 2.2; wctx.lineJoin = 'round';
-    wctx.beginPath(); let started = false;
+    c.strokeStyle = css('--accent'); c.lineWidth = 2.2; c.lineJoin = 'round';
+    c.beginPath(); let started = false;
     for (let i = 0; i < a.t.length; i++) {
       if (a.t[i] < t0) continue;
       const px = X(a.t[i]), py = Y(a.z[i]);
-      if (!started) { wctx.moveTo(px, py); started = true; } else wctx.lineTo(px, py);
+      if (!started) { c.moveTo(px, py); started = true; } else c.lineTo(px, py);
     }
-    wctx.stroke();
-    wctx.fillStyle = css('--accent');
-    for (const i of a.peaks) { if (a.t[i] < t0) continue; wctx.beginPath(); wctx.arc(X(a.t[i]), Y(a.z[i]), 3.5, 0, Math.PI * 2); wctx.fill(); }
+    c.stroke();
+    c.fillStyle = css('--accent');
+    for (const i of a.peaks) { if (a.t[i] < t0) continue; c.beginPath(); c.arc(X(a.t[i]), Y(a.z[i]), 3.5, 0, Math.PI * 2); c.fill(); }
+  }
+
+  function inhaleBands(t0, t1) {
+    const bands = [];
+    const runs = guideRuns.concat(guideOn ? [{ from: guideStart, to: nowS() }] : []);
+    for (const r of runs) {
+      for (let a = r.from; a < r.to; a += IN + OUT) {
+        const b = Math.min(a + IN, r.to);
+        if (b > t0 && a < t1) bands.push([Math.max(a, t0), Math.min(b, t1)]);
+      }
+    }
+    return bands;
+  }
+
+  function drawTrend() {
+    const { c, w, h } = fit($('#trend'));
+    const t1 = nowS(), t0 = t1 - TREND, padL = 34, padR = 8, padT = 10, padB = 20;
+    const pw = w - padL - padR, ph = h - padT - padB;
+    const X = t => padL + (t - t0) / TREND * pw;
+    // 吸っている時間帯
+    c.fillStyle = css('--breath-soft');
+    for (const [a, b] of inhaleBands(t0, t1)) c.fillRect(X(a), padT, X(b) - X(a), ph);
+    const pts = beatSeries.filter(p => p.t >= t0);
+    // 時間の目盛り（10秒ごと）
+    c.strokeStyle = css('--line'); c.lineWidth = 1; c.fillStyle = css('--muted');
+    c.font = '11px ' + css('--font'); c.textAlign = 'center'; c.textBaseline = 'top';
+    for (let s = 0; s <= TREND; s += 10) {
+      const x = padL + (TREND - s) / TREND * pw;
+      c.beginPath(); c.moveTo(x, padT); c.lineTo(x, padT + ph); c.stroke();
+      c.fillText(s === 0 ? '今' : s + '秒前', Math.min(Math.max(x, padL + 16), w - 16), padT + ph + 4);
+    }
+    if (pts.length < 2) { placeholder(c, 2 * padL + pw, 2 * padT + ph, running ? '数拍分たまると線が出ます' : '計測すると1拍ごとの脈拍がここに出ます'); return; }
+    let lo = Math.min(...pts.map(p => p.hr)), hi = Math.max(...pts.map(p => p.hr));
+    const mid = (lo + hi) / 2, span = Math.max(20, hi - lo + 8);
+    lo = Math.floor((mid - span / 2) / 5) * 5; hi = Math.ceil((mid + span / 2) / 5) * 5;
+    const Y = v => padT + (1 - (v - lo) / (hi - lo)) * ph;
+    c.textAlign = 'right'; c.textBaseline = 'middle';
+    for (let v = lo; v <= hi; v += (hi - lo) / 2) {
+      c.strokeStyle = css('--line'); c.beginPath(); c.moveTo(padL, Y(v)); c.lineTo(padL + pw, Y(v)); c.stroke();
+      c.fillStyle = css('--muted'); c.fillText(Math.round(v), padL - 6, Y(v));
+    }
+    c.strokeStyle = css('--accent'); c.lineWidth = 2; c.lineJoin = 'round';
+    c.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const x = X(pts[i].t), y = Y(pts[i].hr);
+      if (i === 0 || pts[i].t - pts[i - 1].t > 2.5) c.moveTo(x, y); else c.lineTo(x, y);
+    }
+    c.stroke();
+    c.fillStyle = css('--accent');
+    const e = pts[pts.length - 1]; c.beginPath(); c.arc(X(e.t), Y(e.hr), 3.5, 0, Math.PI * 2); c.fill();
+  }
+
+  /* ---------- 呼吸ガイド ---------- */
+  const orbFill = $('#orbFill'), orbCount = $('#orbCount'), say = $('#say'), saySub = $('#saySub'), guideBtn = $('#guideBtn');
+  function guideFrame() {
+    if (!guideOn) return;
+    const t = nowS() - guideStart, cyc = t % (IN + OUT), inhale = cyc < IN;
+    const p = inhale ? cyc / IN : 1 - (cyc - IN) / OUT;
+    const ease = 0.5 - 0.5 * Math.cos(Math.PI * p);
+    orbFill.style.transform = 'scale(' + (0.55 + 0.45 * ease).toFixed(3) + ')';
+    orbCount.textContent = Math.ceil(inhale ? IN - cyc : IN + OUT - cyc);
+    say.textContent = inhale ? '吸って' : '吐いて';
+    saySub.textContent = inhale ? '鼻からゆっくり' : '口から細く長く';
+    if (!running) drawTrend();
+    requestAnimationFrame(guideFrame);
+  }
+  guideBtn.addEventListener('click', () => {
+    if (guideOn) {
+      guideOn = false; guideRuns.push({ from: guideStart, to: nowS() });
+      guideRuns = guideRuns.filter(r => r.to > nowS() - TREND);
+      guideBtn.textContent = '呼吸ガイドをはじめる';
+      say.textContent = 'ガイド停止中'; saySub.textContent = '計測しながら使うと、呼吸と脈の関係が見えます';
+      orbCount.textContent = ''; orbFill.style.transform = 'scale(.55)';
+    } else {
+      guideOn = true; guideStart = nowS();
+      guideBtn.textContent = '呼吸ガイドを止める';
+      requestAnimationFrame(guideFrame);
+    }
+  });
+
+  /* ---------- 記録 ---------- */
+  const KEY = 'myaku-records-v1';
+  function loadRecords() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; } }
+  function saveRecords(r) { try { localStorage.setItem(KEY, JSON.stringify(r)); return true; } catch (e) { return false; } }
+  let records = loadRecords();
+  const WD = ['日', '月', '火', '水', '木', '金', '土'];
+  function fmt(ms) {
+    const d = new Date(ms);
+    return (d.getMonth() + 1) + '/' + d.getDate() + '(' + WD[d.getDay()] + ') ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  saveBtn.addEventListener('click', () => {
+    if (!pending) return;
+    const tag = document.querySelector('input[name="tag"]:checked')?.value || '';
+    records.push({ id: Date.now().toString(36), t: Date.now(), bpm: pending.bpm, rsa: pending.rsa ?? null, tag });
+    if (saveRecords(records)) { saveBtn.textContent = '記録しました'; }
+    else { saveBtn.textContent = '保存できませんでした（ブラウザの設定を確認してください）'; records.pop(); }
+    saveBtn.disabled = true; renderRecords();
+  });
+
+  function renderRecords() {
+    const list = $('#list'); list.textContent = '';
+    $('#empty').hidden = records.length > 0;
+    [...records].reverse().forEach(r => {
+      const li = document.createElement('li');
+      const when = document.createElement('div'); when.className = 'when';
+      when.textContent = fmt(r.t);
+      const sub = document.createElement('small');
+      sub.textContent = [r.tag, r.rsa != null ? '呼吸の揺れ 約' + r.rsa : ''].filter(Boolean).join('・') || '　';
+      when.appendChild(sub);
+      const v = document.createElement('div'); v.className = 'v';
+      v.textContent = r.bpm; const u = document.createElement('small'); u.textContent = '拍/分'; v.appendChild(u);
+      const del = document.createElement('button'); del.className = 'del'; del.textContent = '削除';
+      let timer = null;
+      del.addEventListener('click', () => {
+        if (!del.classList.contains('armed')) {
+          del.classList.add('armed'); del.textContent = 'もう一度で削除';
+          timer = setTimeout(() => { del.classList.remove('armed'); del.textContent = '削除'; }, 3000);
+          return;
+        }
+        clearTimeout(timer);
+        records = records.filter(x => x.id !== r.id); saveRecords(records); renderRecords();
+      });
+      li.append(when, v, del); list.appendChild(li);
+    });
+    drawHist();
+  }
+
+  function drawHist() {
+    const { c, w, h } = fit($('#hist'));
+    const pts = records.slice(-20);
+    if (!pts.length) { placeholder(c, w, h, '記録するとここに推移が出ます'); return; }
+    const padL = 34, padR = 14, padT = 12, padB = 22, pw = w - padL - padR, ph = h - padT - padB;
+    const vals = pts.map(p => p.bpm);
+    const lo = Math.floor(Math.min(50, ...vals.map(v => v - 5)) / 10) * 10;
+    const hi = Math.ceil(Math.max(100, ...vals.map(v => v + 5)) / 10) * 10;
+    const Y = v => padT + (1 - (v - lo) / (hi - lo)) * ph;
+    const X = i => padL + (pts.length === 1 ? pw / 2 : i / (pts.length - 1) * pw);
+    // 一般的な安静時の目安 60〜100
+    c.fillStyle = css('--accent-soft'); c.fillRect(padL, Y(100), pw, Y(60) - Y(100));
+    c.font = '11px ' + css('--font'); c.textAlign = 'right'; c.textBaseline = 'middle'; c.fillStyle = css('--muted');
+    [60, 100].forEach(v => c.fillText(v, padL - 6, Y(v)));
+    c.textAlign = 'left'; c.textBaseline = 'bottom'; c.fillText('安静時の目安', padL + 4, Y(100) - 2);
+    // 線と点
+    c.strokeStyle = css('--accent'); c.lineWidth = 2; c.lineJoin = 'round'; c.beginPath();
+    pts.forEach((p, i) => { const x = X(i), y = Y(p.bpm); i ? c.lineTo(x, y) : c.moveTo(x, y); });
+    if (pts.length > 1) c.stroke();
+    c.fillStyle = css('--accent');
+    pts.forEach((p, i) => { c.beginPath(); c.arc(X(i), Y(p.bpm), 3.5, 0, Math.PI * 2); c.fill(); });
+    // 最初と最後の日付
+    c.fillStyle = css('--muted'); c.textBaseline = 'top';
+    const d = ms => { const x = new Date(ms); return (x.getMonth() + 1) + '/' + x.getDate(); };
+    c.textAlign = 'left'; c.fillText(d(pts[0].t), padL, padT + ph + 6);
+    if (pts.length > 1) { c.textAlign = 'right'; c.fillText(d(pts[pts.length - 1].t), padL + pw, padT + ph + 6); }
   }
 
   startBtn.addEventListener('click', start);
   stopBtn.addEventListener('click', stop);
   document.addEventListener('visibilitychange', () => { if (document.hidden && running) stop(); });
-  window.addEventListener('resize', draw);
-  draw();
+  window.addEventListener('resize', () => { drawWave(); drawTrend(); drawHist(); });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { drawWave(); drawTrend(); drawHist(); });
+  drawWave(); drawTrend(); renderRecords();
 })();
 </script>
 </body>
